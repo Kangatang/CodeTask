@@ -1,6 +1,7 @@
 import json
 
 class WarehouseManager:
+    #--------------------------------------------------------------------------
     def __init__(self, aFilename ):
         with open( aFilename, 'r' ) as lFile:
             lLoadedFile = json.load( lFile )
@@ -12,15 +13,23 @@ class WarehouseManager:
         
         #If we run out of a product, we have to send off for some replacements, this is a stub
         # for our outgoing product requests
+        self.mPendingProducts = []
         self.mPendingInternalOrders = {}
         self.mCurrentInternalOrderId = 0
+    #init    
         
+        
+    #--------------------------------------------------------------------------    
     def FillOrders( self, aRequestedOrders ):
         lResultDict = {"unfulfillable":[]}
     
         for lCurrentOrderId in aRequestedOrders["orderIds"]:
             #Obtain the order info for the requested order
             lTargetOrder = self.mOrderDict[lCurrentOrderId]
+            
+            #If the order has previosly been filled, ignore
+            if lTargetOrder["status"] == "Fulfilled":
+                continue
             
             # We need to check if the order is possible first, because we don't
             # partially fill orders, we don't want to start subtracting quantities before
@@ -42,10 +51,11 @@ class WarehouseManager:
                     lTargetProduct = self.mProductDict[lCurrentOrderedProduct["productId"]]
                     lTargetProduct["quantityOnHand"] -= lCurrentOrderedProduct["quantity"]
                 lTargetOrder["status"] = "Fulfilled"
-                
         return lResultDict
+    #FillOrders    
         
-        
+    
+    #--------------------------------------------------------------------------    
     def ProcessInternalStockThreshold( self ):
         #Process any new orders for products below the threshold
         #Check if order has already been sent to refill that product
@@ -53,9 +63,27 @@ class WarehouseManager:
             if lCurrentProduct["quantityOnHand"] < lCurrentProduct["reorderThreshold"]:
                 #We need more of this item, check if we have already asked before
                 #If we don't have one, make one
-                if lCurrentProduct["productId"] not in self.mPendingInternalOrders:
+                if lCurrentProduct["productId"] not in self.mPendingProducts:
                     self.mCurrentInternalOrderId += 1
-                    self.mPendingInternalOrders[lCurrentProduct["productId"]] = { "orderId" : self.mCurrentInternalOrderId, "orderQuantity" : lCurrentProduct["reorderAmount"] }
-        print( self.mPendingInternalOrders )            
-                    
+                    self.mPendingInternalOrders[self.mCurrentInternalOrderId] = { "productId" : lCurrentProduct["productId"], "orderQuantity" : lCurrentProduct["reorderAmount"] }
+                    self.mPendingProducts.append(lCurrentProduct["productId"])
+    #ProcessInternalStockThreshold
+
+
+    #--------------------------------------------------------------------------
+    def FillInternalOrders( self, aCompleteOrders ):
+        lResultDict = {"unknownIds":[]}
+        for lCurrentOrderId in aCompleteOrders["orderIds"]:
+            if lCurrentOrderId in self.mPendingInternalOrders: 
+                lTargetProduct = self.mPendingInternalOrders[lCurrentOrderId]["productId"]
+                self.mProductDict[lTargetProduct]["quantityOnHand"] += self.mPendingInternalOrders[lCurrentOrderId]["orderQuantity"]
+                #Now that we have restored the quantitiy of the product due to the order, it's time to delete
+                #Our pending order indicators so we can receive new orders for this product when it runs out again
+                self.mPendingInternalOrders.pop(lCurrentOrderId, None)
+                self.mPendingProducts.remove(lTargetProduct)
+            else:
+                lResultDict["unknownIds"].append(lCurrentOrderId)
+                
+        return lResultDict
+    #FillInternalOrders                
                     
