@@ -21,9 +21,19 @@ class WarehouseManager:
         
     #--------------------------------------------------------------------------    
     def FillOrders( self, aRequestedOrders ):
+        if "orderIds" not in aRequestedOrders:
+            return "Error: orderIds not present"
         lResultDict = {"unfulfillable":[]}
     
         for lCurrentOrderId in aRequestedOrders["orderIds"]:
+        
+            if lCurrentOrderId not in self.mOrderDict:
+                # We don't have this order, add it to error output and continue
+                # we don't want to silently fail because that might be implied as
+                # succeeding
+                lResultDict["unfulfillable"].append(lCurrentOrderId)
+                continue
+            
             #Obtain the order info for the requested order
             lTargetOrder = self.mOrderDict[lCurrentOrderId]
             
@@ -36,10 +46,19 @@ class WarehouseManager:
             # we know we have to, otherwise we'd have to deal with some ugly quantity rollbacks
             lOrderPossible = True
             for lCurrentOrderedProduct in lTargetOrder["items"]:
+                
+                if lCurrentOrderedProduct["productId"] not in self.mProductDict:
+                    lOrderPossible = False
+                    
                 lTargetProduct = self.mProductDict[lCurrentOrderedProduct["productId"]]
                 if ( lTargetProduct["quantityOnHand"] < lCurrentOrderedProduct["quantity"] ):
                     #This is bad, we don't have enough stock on hand
                     lOrderPossible = False
+                    
+                # If this order is no longer valid, there's no reason to check
+                # ALL the products requested
+                if lOrderPossible == False:
+                    break
             
             if lOrderPossible == False:
                 lResultDict["unfulfillable"].append(lCurrentOrderId)
@@ -85,5 +104,14 @@ class WarehouseManager:
                 lResultDict["unknownIds"].append(lCurrentOrderId)
                 
         return lResultDict
-    #FillInternalOrders                
+    #FillInternalOrders       
+
+    #Helper functions for internal tests
+    #--------------------------------------------------------------------------
+    def GetInternalOrders( self ):
+        return self.mPendingInternalOrders
+    def GetCurrentOrders( self ):
+        return self.mOrderDict
+    def GetProductQuantities( self ):
+        return self.mProductDict
                     
